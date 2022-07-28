@@ -1,0 +1,183 @@
+# Test Event for Lambda:
+# {
+#   "version": "0",
+#   "id": "999cccaa-eaaa-0000-1111-123456789012",
+#   "detail-type": "AWS Service Event via CloudTrail",
+#   "source": "aws.controltower",
+#   "account": "XXXXXXXXXXXX",
+#   "time": "2018-08-30T21:42:18Z",
+#   "region": "us-east-2",
+#   "resources": [],
+#   "detail": {
+#     "eventVersion": "1.05",
+#     "userIdentity": {
+#       "accountId": "XXXXXXXXXXXX",
+#       "invokedBy": "AWS Internal"
+#     },
+#     "eventTime": "2018-08-30T21:42:18Z",
+#     "eventSource": "controltower.amazonaws.com",
+#     "eventName": "CreateManagedAccount",
+#     "awsRegion": "us-east-2",
+#     "sourceIPAddress": "AWS Internal",
+#     "userAgent": "AWS Internal",
+#     "eventID": "0000000-0000-0000-1111-123456789012",
+#     "readOnly": false,
+#     "eventType": "AwsServiceEvent",
+#     "serviceEventDetails": {
+#       "createManagedAccountStatus": {
+#         "organizationalUnit": {
+#           "organizationalUnitName": "SharedServices",
+#           "organizationalUnitId": "ou-XXXX-l3zc8b3h"
+#         },
+#         "account": {
+#           "accountName": "networkingSbx",
+#           "accountId": "123456789012"
+#         },
+#         "state": "SUCCEEDED",
+#         "message": "AWS Control Tower successfully created a managed account.",
+#         "requestedTimestamp": "2019-11-15T11:45:18+0000",
+#         "completedTimestamp": "2019-11-16T12:09:32+0000"
+#       }
+#     }
+#   }
+# }
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Maps the AWS Account to the right groups and permissions sets to new Accounts
+
+Resources:
+  lambdaExecRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+            Condition: {}
+      Path: /
+      Policies:
+        - PolicyName: CreateAssignment
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              Sid: VisualEditor2
+              Effect: Allow
+              Action:
+                - sso:CreateAccountAssignment
+                - sso:ListInstances
+                - ssm:GetParameter
+                - identitystore:ListGroups
+              Resource: '*'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  addPermissionSetsLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import logging
+
+          LOGGER = logging.getLogger()
+          LOGGER.setLevel(logging.INFO)
+
+          def lambda_handler(event, context):
+              print(event)
+              masterAcct = event['account']
+              eventDetails = event['detail']
+              regionName = eventDetails['awsRegion']
+              eventName = eventDetails['eventName']
+              srvEventDetails = eventDetails['serviceEventDetails']
+              if eventName == 'CreateManagedAccount':
+                  newAccInfo = srvEventDetails['createManagedAccountStatus']
+                  cmdStatus = newAccInfo['state']
+                  if cmdStatus == 'SUCCEEDED':
+                      '''Sucessful event recieved'''
+                      ouInfo = newAccInfo['organizationalUnit']
+                      ouName = ouInfo['organizationalUnitName']
+                      ouId = ouInfo['organizationalUnitId']
+                      accId = newAccInfo['account']['accountId']
+                      accName = newAccInfo['account']['accountName']
+
+                      ssoAdm = boto3.client('sso-admin')
+                      ssoInstances=ssoAdm.list_instances()['Instances']
+                      ssm=boto3.client('ssm')
+                      identitystore=boto3.client('identitystore')
+                      
+                      ssoSchemaRaw = ssm.get_parameter(Name='ssoSchema')
+                      ssoSchema = json.loads(ssoSchemaRaw['Parameter']['Value'])
+
+                      for i in ssoSchema:
+                          SSOInstanceArn=i['SSOInstanceArn']
+                          for x in ssoInstances:
+                              if x['InstanceArn'] == SSOInstanceArn:
+                                  SSOIdentityStoreId=x['IdentityStoreId']
+                          
+                          PermissionSetArn=i['PermissionSetArn']
+                          OUs=i['OUs']
+                          if ouName in OUs:
+                              try:
+                                  for g in i['SSOGroups']:
+                                      groups=identitystore.list_groups(
+                                          IdentityStoreId=SSOIdentityStoreId,
+                                          Filters=[{'AttributePath':'DisplayName','AttributeValue':g}]
+                                      )
+
+                                      for y in groups['Groups']:
+                                          if y['DisplayName'] == g:
+                                              guid=y['GroupId']
+                                              assign = ssoAdm.create_account_assignment(
+                                                  InstanceArn=SSOInstanceArn,
+                                                  TargetId=accId,
+                                                  TargetType='AWS_ACCOUNT',
+                                                  PermissionSetArn=PermissionSetArn,
+                                                  PrincipalType='GROUP',
+                                                  PrincipalId=guid
+                                                  )
+                                              LOGGER.info('Processed {} Sucessfully'.format(assign))
+                              except Exception as e:
+                                  LOGGER.error('failed, REASON: {}'.format(e))
+                  else:
+                      'Unsucessful event recieved'''
+                      LOGGER.info('Unsucessful Event Recieved. SKIPPING :{}'.format(event))
+                      return(False)
+              else:
+                  LOGGER.info('Control Tower Event Captured :{}'.format(event))
+      Handler: index.lambda_handler
+      MemorySize: 128
+      Role: !GetAtt "lambdaExecRole.Arn"
+      Runtime: python3.9
+      Timeout: 60
+
+  createControlTowerLifeCycleEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Capture Control Tower LifeCycle Events and Trigger an Action
+      EventPattern:
+        detail:
+          eventName:
+          - CreateManagedAccount
+          eventSource:
+          - controltower.amazonaws.com
+        detail-type:
+        - AWS Service Event via CloudTrail
+        source:
+        - aws.controltower
+      Name: CaptureControlTowerLifeCycleEvents
+      State: ENABLED
+      Targets:
+      - Arn: !GetAtt "addPermissionSetsLambda.Arn"
+        Id: IDAddPermissionSets2NewAccount
+
+  permissionForEventsToInvokeLambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt "addPermissionSetsLambda.Arn"
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt "createControlTowerLifeCycleEventRule.Arn"

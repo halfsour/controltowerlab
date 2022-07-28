@@ -1,0 +1,122 @@
+# Deploy this to the Control Tower master account and maintain SSO groups and permission sets here
+AWSTemplateFormatVersion: '2010-09-09'
+Description: IAM Roles and Policies for SSO...these get Deployed to the AWS Accounts created via Account Factory
+
+Parameters:
+  SSOInstanceArn:
+    Type: String
+    Default: 'arn:aws:sso:::instance/ssoins-6684880dd3afab94'
+
+Resources:
+  # Add permission sets here and then add to 'ssoSchema' below so that they are automatically assigned to new accounts as noted
+
+  developer:
+    Type: AWS::SSO::PermissionSet
+    Properties:
+      Tags:
+        - Key: roleName
+          Value: developer
+      InstanceArn: !Ref SSOInstanceArn
+      Name: 'developer'
+      Description: 'Full access granted to S3 and EC2 services, but there will probably be a need to add permissions as application teams expand their AWS adoption to other services'
+      SessionDuration: 'PT8H'
+      ManagedPolicies:
+        - 'arn:aws:iam::aws:policy/AWSCloudFormationFullAccess'
+      InlinePolicy: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+              {
+                  "Action": [
+                      "s3:*",
+                      "ec2:*"
+                  ],
+                  "Effect": "Allow",
+                  "Resource": "*"
+              } 
+          ]
+        }
+
+  support:
+    Type: AWS::SSO::PermissionSet
+    Properties:
+      Tags:
+        - Key: roleName
+          Value: support
+      InstanceArn: !Ref SSOInstanceArn
+      Name: 'support'
+      Description: 'grants Read access to most services and access to open and manage AWS support cases'
+      SessionDuration: 'PT8H'
+      ManagedPolicies:
+        - 'arn:aws:iam::aws:policy/job-function/SupportUser'
+  
+  cloudEngineer:
+    Type: AWS::SSO::PermissionSet
+    Properties:
+      Tags:
+        - Key: roleName
+          Value: cloudEngineer
+      InstanceArn: !Ref SSOInstanceArn
+      Name: 'cloudEngineer'
+      Description: 'grants Change access to most services'
+      SessionDuration: 'PT8H'
+      ManagedPolicies:
+        - 'arn:aws:iam::aws:policy/job-function/SystemAdministrator'
+        - 'arn:aws:iam::aws:policy/job-function/NetworkAdministrator'
+        - 'arn:aws:iam::aws:policy/AWSCloudFormationFullAccess'
+        - 'arn:aws:iam::aws:policy/AWSResourceAccessManagerFullAccess'
+
+  # This is used by SSOAssignmentLambda to automatically assign permissions to newly created accounts
+  ssoSchema:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: ssoSchema
+      Type: String
+      Value: !Sub |
+        [
+          {
+            "PermissionSet":"developer",
+            "PermissionSetArn":"${developer.PermissionSetArn}",
+            "SSOInstanceArn":"${SSOInstanceArn}",
+            "SSOGroups":["developer"],
+            "OUs":[
+              "Dev",
+              "Test",
+              "Production",
+              "Sandbox"
+            ]
+          },
+          {
+            "PermissionSet":"support",
+            "PermissionSetArn":"${support.PermissionSetArn}",
+            "SSOInstanceArn":"${SSOInstanceArn}",
+            "SSOGroups":[
+              "developer",
+              "cloudengineer"
+              ],
+            "OUs":[
+              "Dev",
+              "Test",
+              "Sandbox",
+              "Production",
+              "SharedServices",
+              "Security"
+            ]
+          },
+          {
+            "PermissionSet":"cloudEngineer",
+            "PermissionSetArn":"${cloudEngineer.PermissionSetArn}",
+            "SSOInstanceArn":"${SSOInstanceArn}",
+            "SSOGroups":[
+              "cloudengineer"
+              ],
+            "OUs":[
+              "Dev",
+              "Test",
+              "Sandbox",
+              "Production",
+              "SharedServices",
+              "Security"
+            ]
+          }
+        ]

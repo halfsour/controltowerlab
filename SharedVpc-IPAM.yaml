@@ -1,0 +1,31 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: VPCs and Shares in RAM
+
+Parameters: 
+  orgId:
+    Type: String 
+    Default: o-dhd26xrlep
+  share2OU:
+    Type: String
+    Default: ou-8rh6-if0iq4lx
+  orgMasterAccountId:
+    Type: String
+    Default: 804488500168
+  ipamPoolId:
+    Type: String
+    Default: ipam-pool-0b5bc3f57c5153a16
+
+Resources:
+  allocation:
+    Type: AWS::EC2::IPAMAllocation
+    Properties: 
+      IpamPoolId: !Ref ipamPoolId
+      NetmaskLength: 20
+  vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+#      CidrBlock: !Select [2, !Split ["|", !Ref allocation]]
+      EnableDnsSupport: 'true'
+      EnableDnsHostnames: 'true'
+      Ipv4IpamPoolId: !Ref ipamPoolId
+      Ipv4NetmaskLength: 20

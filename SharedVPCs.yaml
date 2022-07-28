@@ -1,0 +1,323 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: VPCs and Shares in RAM
+
+Parameters: 
+  orgId:
+    Type: String 
+    Default: o-dhd26xrlep
+  share2OU:
+    Type: String
+    Default: ou-8rh6-if0iq4lx
+  orgMasterAccountId:
+    Type: String
+    Default: 804488500168
+  pCidrBlock:
+    Type: String
+    Default: 10.0.0.0/16
+  pPrivateSubnet1Cidr:
+    Description: CIDR for Private Subnet-1
+    Type: String
+    Default: 10.0.0.0/24
+  pPrivateSubnet2Cidr:
+    Description: CIDR for Private Subnet-2
+    Type: String
+    Default: 10.0.1.0/24
+  pPrivateSubnet3Cidr:
+    Description: CIDR for Private Subnet-3
+    Type: String
+    Default: 10.0.2.0/24
+  pPublicSubnet1Cidr:
+    Description: CIDR for Public Subnet-1
+    Type: String
+    Default: 10.0.3.0/24
+  pPublicSubnet2Cidr:
+    Description: CIDR for Public Subnet-2
+    Type: String
+    Default: 10.0.4.0/24
+  pPublicSubnet3Cidr:
+    Description: CIDR for Public Subnet-3
+    Type: String
+    Default: 10.0.5.0/24
+  pFwSubnet1Cidr:
+    Description: CIDR for Firewall Subnet-1
+    Type: String
+    Default: 10.0.6.0/28
+  pFwSubnet2Cidr:
+    Description: CIDR for Firewall Subnet-2
+    Type: String
+    Default: 10.0.6.16/28
+  pFwSubnet3Cidr:
+    Description: CIDR for Firewall Subnet-3
+    Type: String
+    Default: 10.0.6.32/28
+
+Resources: 
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref pCidrBlock
+      EnableDnsSupport: 'true'
+      EnableDnsHostnames: 'true'
+  
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    #Properties:
+  
+  AttachIgw:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+  
+  networkFirewall:
+    Type: AWS::NetworkFirewall::Firewall
+    Properties:
+      FirewallName: !Sub "aws-network-firewall-${AWS::StackName}"
+      FirewallPolicyArn: !Ref egressFirewallPolicy
+      VpcId: !Ref Vpc
+      SubnetMappings:
+        - SubnetId: !Ref fwSubnet1
+        - SubnetId: !Ref fwSubnet2
+        - SubnetId: !Ref fwSubnet3
+
+  domainAllowStatefulRuleGroup:
+    Type: AWS::NetworkFirewall::RuleGroup
+    Properties:
+      RuleGroupName: !Sub "domain-allow-${AWS::StackName}"
+      Type: STATEFUL
+      Capacity: 100
+      RuleGroup:
+        RuleVariables:
+          IPSets:
+            HOME_NET:
+              Definition:
+                - "10.0.0.0/8"
+        RulesSource:
+          RulesSourceList:
+            TargetTypes:
+              - HTTP_HOST
+              - TLS_SNI
+            Targets:
+              - ".amazon.com"
+              - ".amazonaws.com"
+              - ".microsoft.com"
+            GeneratedRulesType: "ALLOWLIST"
+  egressFirewallPolicy:
+    Type: AWS::NetworkFirewall::FirewallPolicy
+    Properties:
+      FirewallPolicyName: !Sub "firewall-policy-${AWS::StackName}"
+      FirewallPolicy:
+        StatelessDefaultActions:
+          - 'aws:forward_to_sfe'
+        StatelessFragmentDefaultActions:
+          - 'aws:forward_to_sfe'
+        StatefulRuleGroupReferences:
+          - ResourceArn: !Ref domainAllowStatefulRuleGroup
+ 
+  
+  privateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: 
+        Fn::Select: 
+          - 0
+          - Fn::GetAZs: ""
+      CidrBlock: !Ref pPrivateSubnet1Cidr
+  privateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: 
+        Fn::Select: 
+          - 1
+          - Fn::GetAZs: ""
+      CidrBlock: !Ref pPrivateSubnet2Cidr
+  privateSubnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: 
+        Fn::Select: 
+          - 2
+          - Fn::GetAZs: ""
+      CidrBlock: !Ref pPrivateSubnet3Cidr
+
+  publicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: 
+        Fn::Select: 
+          - 0
+          - Fn::GetAZs: ""
+      CidrBlock: !Ref pPublicSubnet1Cidr    
+  publicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: 
+        Fn::Select: 
+          - 1
+          - Fn::GetAZs: ""
+      CidrBlock: !Ref pPublicSubnet2Cidr
+  publicSubnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: 
+        Fn::Select: 
+          - 2
+          - Fn::GetAZs: ""
+      CidrBlock: !Ref pPublicSubnet3Cidr
+      
+  fwSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: 
+        Fn::Select: 
+          - 0
+          - Fn::GetAZs: ""
+      CidrBlock: !Ref pFwSubnet1Cidr    
+  fwSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: 
+        Fn::Select: 
+          - 1
+          - Fn::GetAZs: ""
+      CidrBlock: !Ref pFwSubnet2Cidr
+  fwSubnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: 
+        Fn::Select: 
+          - 2
+          - Fn::GetAZs: ""
+      CidrBlock: !Ref pFwSubnet3Cidr
+
+  pubRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: "Name"
+          Value: "Public Route Table"
+  pubRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref pubRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  pubSnRta1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref pubRouteTable
+      SubnetId: !Ref publicSubnet1
+  pubSnRta2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref pubRouteTable
+      SubnetId: !Ref publicSubnet2
+  pubSnRta3:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref pubRouteTable
+      SubnetId: !Ref publicSubnet3
+  prvRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: "Name"
+          Value: "Private Route Table"
+  prvRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref prvRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref natGW1
+  natEip1:
+    Type: AWS::EC2::EIP
+  natGW1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      SubnetId: !Ref publicSubnet1
+      AllocationId: !GetAtt natEip1.AllocationId
+  prvSnRta1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref prvRouteTable1
+      SubnetId: !Ref privateSubnet1
+
+  prvRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: "Name"
+          Value: "Private Route Table"
+  prvRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref prvRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref natGW2
+  natEip2:
+    Type: AWS::EC2::EIP
+  natGW2:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      SubnetId: !Ref publicSubnet2
+      AllocationId: !GetAtt natEip2.AllocationId
+  prvSnRta2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref prvRouteTable2
+      SubnetId: !Ref privateSubnet2
+
+  prvRouteTable3:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: "Name"
+          Value: "Private Route Table"
+  prvRoute3:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref prvRouteTable3
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref natGW3
+  natEip3:
+    Type: AWS::EC2::EIP
+  natGW3:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      SubnetId: !Ref publicSubnet3
+      AllocationId: !GetAtt natEip3.AllocationId
+  prvSnRta3:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref prvRouteTable3
+      SubnetId: !Ref privateSubnet3
+
+  shareResources:
+    Type: AWS::RAM::ResourceShare
+    Properties:
+      Name: !Sub SharedNetworkServices-${AWS::Region}
+      AllowExternalPrincipals: false
+      Principals:
+        - !Sub arn:aws:organizations::${orgMasterAccountId}:ou/${orgId}/${share2OU}
+      ResourceArns:
+        - !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${privateSubnet1}
+        - !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${privateSubnet2}
+        - !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${privateSubnet3}
+        # Uncomment these to share the public subnets also
+        ## if these are not shared, workloads in the private subnets will still have egress access via the centralized nat gws 
+        - !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${publicSubnet1}
+        - !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${publicSubnet2}
+        - !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${publicSubnet3}

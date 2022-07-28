@@ -1,0 +1,133 @@
+# Run in the Org Master Account
+AWSTemplateFormatVersion: 2010-09-09
+Description: Org IPAM and Shares in RAM
+      
+Resources:
+  ipam:
+    Type:  AWS::EC2::IPAM
+    Properties:
+      # Change as needed
+      OperatingRegions: 
+        - RegionName: us-east-1
+        - RegionName: us-east-2
+        - RegionName: us-west-2
+  rootPool:
+    Type: AWS::EC2::IPAMPool
+    Properties:
+      AddressFamily: ipv4
+      IpamScopeId: !GetAtt ipam.PrivateDefaultScopeId
+      ProvisionedCidrs: 
+        - Cidr: 10.2.0.0/16
+  sbxPool:
+    Type: AWS::EC2::IPAMPool
+    Properties:
+      AddressFamily: ipv4
+      IpamScopeId: !GetAtt ipam.PrivateDefaultScopeId
+      SourceIpamPoolId: !Ref rootPool
+      ProvisionedCidrs: 
+        - Cidr: 10.2.0.0/18
+  sbxUE1Pool:
+    Type: AWS::EC2::IPAMPool
+    Properties:
+      AddressFamily: ipv4
+      Locale: us-east-1
+      IpamScopeId: !GetAtt ipam.PrivateDefaultScopeId
+      SourceIpamPoolId: !Ref sbxPool
+      ProvisionedCidrs: 
+        - Cidr: 10.2.0.0/20
+  sbxUE1Share:
+    Type: AWS::RAM::ResourceShare
+    Properties:
+      AllowExternalPrincipals: false
+      Name: IPAM-UE1sbxPool
+      Principals:
+        - !Sub arn:aws:organizations::${AWS::AccountId}:ou/o-dhd26xrlep/ou-8rh6-if0iq4lx
+      ResourceArns:
+        - !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:ipam-pool/${sbxUE1Pool}
+  sbxUE2Pool:
+    Type: AWS::EC2::IPAMPool
+    Properties:
+      AddressFamily: ipv4
+      Locale: us-east-2
+      IpamScopeId: !GetAtt ipam.PrivateDefaultScopeId
+      SourceIpamPoolId: !Ref sbxPool
+      ProvisionedCidrs: 
+        - Cidr: 10.2.16.0/20
+  sbxUE2Share:
+    Type: AWS::RAM::ResourceShare
+    Properties:
+      AllowExternalPrincipals: false
+      Name: IPAM-UE2sbxPool
+      Principals:
+        - 873906731476
+      ResourceArns:
+        - !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:ipam-pool/${sbxUE2Pool}
+  sbxUW2Pool:
+    Type: AWS::EC2::IPAMPool
+    Properties:
+      AddressFamily: ipv4
+      Locale: us-west-2
+      IpamScopeId: !GetAtt ipam.PrivateDefaultScopeId
+      SourceIpamPoolId: !Ref sbxPool
+      ProvisionedCidrs: 
+        - Cidr: 10.2.32.0/20
+  sbxUW2Share:
+    Type: AWS::RAM::ResourceShare
+    Properties:
+      AllowExternalPrincipals: false
+      Name: IPAM-UW2sbxPool
+      Principals:
+        - 873906731476
+      ResourceArns:
+        - !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:ipam-pool/${sbxUW2Pool}
+  devPool:
+    Type: AWS::EC2::IPAMPool
+    Properties:
+      AddressFamily: ipv4
+      IpamScopeId: !GetAtt ipam.PrivateDefaultScopeId
+      SourceIpamPoolId: !Ref rootPool
+      ProvisionedCidrs: 
+        - Cidr: 10.2.64.0/18
+  testPool:
+    Type: AWS::EC2::IPAMPool
+    Properties:
+      AddressFamily: ipv4
+      IpamScopeId: !GetAtt ipam.PrivateDefaultScopeId
+      SourceIpamPoolId: !Ref rootPool
+      ProvisionedCidrs: 
+        - Cidr: 10.2.128.0/18
+  prodPool:
+    Type: AWS::EC2::IPAMPool
+    Properties:
+      AddressFamily: ipv4
+      IpamScopeId: !GetAtt ipam.PrivateDefaultScopeId
+      SourceIpamPoolId: !Ref rootPool
+      ProvisionedCidrs: 
+        - Cidr: 10.2.192.0/18
+  devShare:
+    Type: AWS::RAM::ResourceShare
+    Properties:
+      AllowExternalPrincipals: false
+      Name: IPAM-devPool
+      Principals:
+        - 299035406629
+      ResourceArns:
+        - !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:ipam-pool/${devPool}
+  # testShare:
+  #   Type: AWS::RAM::ResourceShare
+  #   Properties:
+  #     AllowExternalPrincipals: false
+  #     Name: !Sub IPAM
+  #     Principals:
+  #       - 873906731476
+  #     ResourceArns:
+  #       - !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:ipam-pool/${testPool}
+  # prodShare:
+  #   Type: AWS::RAM::ResourceShare
+  #   Properties:
+  #     AllowExternalPrincipals: false
+  #     Name: !Sub IPAM
+  #     Principals:
+  #       - 873906731476
+  #     ResourceArns:
+  #       - !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:ipam-pool/${prodPool}
